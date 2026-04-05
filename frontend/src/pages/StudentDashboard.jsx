@@ -1,0 +1,259 @@
+import React, { useState, useEffect, useContext } from 'react';
+import api from '../api/axiosConfig';
+import { AuthContext } from '../context/AuthContext';
+import { useNavigate } from 'react-router-dom';
+
+const StudentDashboard = () => {
+    const { user, logout } = useContext(AuthContext);
+    const navigate = useNavigate();
+    
+    const [activeTab, setActiveTab] = useState('browse'); 
+    const [slots, setSlots] = useState([]);
+    const [myBookings, setMyBookings] = useState([]);
+    
+    // FIXED: Strict Modal State Management
+    const [modal, setModal] = useState({ isOpen: false, slotId: null, agenda: '' });
+    const [bookingState, setBookingState] = useState('idle'); 
+    const [profileData, setProfileData] = useState({ linkedinUrl: '', experience: '', resumeUrl: '', profileImageUrl: '' });
+
+    const [activeChat, setActiveChat] = useState(null);
+    const [chatMessages, setChatMessages] = useState([]);
+    const [newMessage, setNewMessage] = useState('');
+
+    const fetchData = async () => {
+        if (!user) return;
+        try {
+            const slotsRes = await api.get('/bookings/slots');
+            setSlots(slotsRes.data);
+            const bookingsRes = await api.get(`/bookings/student/${user.id}`);
+            setMyBookings(bookingsRes.data);
+        } catch (error) { console.error(error); }
+    };
+
+    const fetchMessages = async () => {
+        if (!activeChat) return;
+        try {
+            const res = await api.get(`/messages/${user.id}/${activeChat}`);
+            setChatMessages(res.data);
+        } catch (error) { console.error(error); }
+    };
+
+    useEffect(() => {
+        if (!user || user.role !== 'STUDENT') { navigate('/'); return; }
+        setProfileData({ linkedinUrl: user.linkedinUrl || '', experience: user.experience || '', resumeUrl: user.resumeUrl || '', profileImageUrl: user.profileImageUrl || '' });
+        fetchData();
+        const interval = setInterval(fetchData, 5000);
+        return () => clearInterval(interval);
+    }, [user, navigate]);
+
+    useEffect(() => {
+        fetchMessages();
+        const chatInterval = setInterval(fetchMessages, 3000);
+        return () => clearInterval(chatInterval);
+    }, [activeChat]);
+
+    if (!user) return null;
+
+    const sendMessage = async () => {
+        if (!newMessage.trim() || !activeChat) return;
+        try {
+            await api.post('/messages/send', { senderId: user.id, receiverId: activeChat, content: newMessage });
+            setNewMessage(''); fetchMessages();
+        } catch (error) { console.error(error); }
+    };
+
+    // FIXED: Properly clear all modal states
+    const closeModal = () => {
+        setModal({ isOpen: false, slotId: null, agenda: '' });
+        setTimeout(() => setBookingState('idle'), 300);
+    };
+
+    const confirmBooking = async () => {
+        if(!modal.agenda.trim()) return alert("Please provide an agenda.");
+        setBookingState('loading');
+        try {
+            await api.post(`/bookings/book/${modal.slotId}/${user.id}`, { agenda: modal.agenda });
+            setBookingState('success');
+            setTimeout(() => { fetchData(); closeModal(); setActiveTab('upcoming'); }, 2000);
+        } catch (error) {
+            setBookingState('error');
+            setTimeout(() => setBookingState('idle'), 3000);
+        }
+    };
+
+    const handleProfileUpdate = async (e) => {
+        e.preventDefault();
+        try {
+            const res = await api.put(`/users/${user.id}/profile`, profileData);
+            alert("Profile updated successfully!");
+            localStorage.setItem('user', JSON.stringify(res.data));
+            window.location.reload(); 
+        } catch (error) { alert("Failed to update profile."); }
+    };
+
+    const upcomingBookings = myBookings.filter(b => ['PENDING', 'APPROVED'].includes(b.status));
+    const historicalBookings = myBookings.filter(b => ['COMPLETED', 'CANCELLED', 'REJECTED', 'NO_SHOW'].includes(b.status));
+    const contacts = Array.from(new Set(myBookings.filter(b => ['APPROVED', 'COMPLETED'].includes(b.status)).map(b => JSON.stringify(b.slot.mentor)))).map(s => JSON.parse(s));
+    const defaultAvatar = 'https://cdn-icons-png.flaticon.com/512/149/149071.png';
+
+    const css = `
+        .dash-container { padding: 20px; font-family: Arial; max-width: 1200px; margin: 0 auto; }
+        .flex-row { display: flex; gap: 20px; flex-wrap: wrap; }
+        .flex-col { flex: 1; min-width: 100%; }
+        @media(min-width: 768px) { .flex-col { min-width: 300px; } }
+        .tabs { display: flex; border-bottom: 1px solid #ccc; margin-bottom: 20px; overflow-x: auto; white-space: nowrap; -webkit-overflow-scrolling: touch; }
+        .tab-btn { padding: 12px 20px; cursor: pointer; background: none; border: none; font-size: 16px; font-weight: bold; }
+        .table-responsive { overflow-x: auto; -webkit-overflow-scrolling: touch; background: white; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+        .chat-box { border: 1px solid #ccc; border-radius: 8px; display: flex; height: 60vh; overflow: hidden; background: white; }
+        .chat-contacts { width: 250px; background: #f9f9f9; border-right: 1px solid #ccc; overflow-y: auto; }
+        .chat-area { flex: 1; display: flex; flex-direction: column; background: #fff; }
+        @media (max-width: 768px) {
+            .dash-container { padding: 10px; }
+            .chat-box { flex-direction: column; height: 75vh; }
+            .chat-contacts { width: 100%; height: 120px; border-right: none; border-bottom: 1px solid #ccc; display: flex; overflow-x: auto; }
+            .contact-item { min-width: 150px; border-bottom: none; border-right: 1px solid #eee; }
+        }
+    `;
+
+    return (
+        <div className="dash-container">
+            <style>{css}</style>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '15px', marginBottom: '20px' }}>
+                <h2 style={{ margin: 0 }}>Student Portal</h2>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+                    <img src={user.profileImageUrl || defaultAvatar} alt="Profile" style={{ width: '40px', height: '40px', borderRadius: '50%', objectFit: 'cover' }} />
+                    <button onClick={logout} style={{ padding: '8px 16px', cursor: 'pointer', background: '#e74c3c', color: 'white', border: 'none', borderRadius: '4px' }}>Logout</button>
+                </div>
+            </div>
+            
+            <div className="tabs">
+                <button onClick={() => setActiveTab('browse')} className="tab-btn" style={{ borderBottom: activeTab === 'browse' ? '3px solid #3498db' : '3px solid transparent' }}>Browse</button>
+                <button onClick={() => setActiveTab('upcoming')} className="tab-btn" style={{ borderBottom: activeTab === 'upcoming' ? '3px solid #3498db' : '3px solid transparent' }}>Upcoming ({upcomingBookings.length})</button>
+                <button onClick={() => setActiveTab('chat')} className="tab-btn" style={{ borderBottom: activeTab === 'chat' ? '3px solid #3498db' : '3px solid transparent' }}>Messages</button>
+                <button onClick={() => setActiveTab('history')} className="tab-btn" style={{ borderBottom: activeTab === 'history' ? '3px solid #3498db' : '3px solid transparent' }}>History</button>
+                <button onClick={() => setActiveTab('profile')} className="tab-btn" style={{ borderBottom: activeTab === 'profile' ? '3px solid #3498db' : '3px solid transparent' }}>Profile</button>
+            </div>
+
+            {activeTab === 'browse' && (
+                <div className="flex-row">
+                    {slots.length === 0 ? <p>No slots currently available.</p> : slots.map(slot => (
+                        <div key={slot.id} className="flex-col" style={{ border: '1px solid #ddd', padding: '20px', borderRadius: '8px', background: 'white' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '15px', marginBottom: '15px' }}>
+                                <img src={slot.mentor.profileImageUrl || defaultAvatar} style={{ width: '50px', height: '50px', borderRadius: '50%', objectFit: 'cover' }} />
+                                <div>
+                                    <h4 style={{ margin: '0 0 5px 0' }}>{slot.mentor.name || slot.mentor.email}</h4>
+                                    <p style={{ margin: '0', fontSize: '14px', color: '#7f8c8d' }}>{slot.mentor.company}</p>
+                                </div>
+                            </div>
+                            <p style={{ fontWeight: 'bold' }}>{new Date(slot.startTimeUtc).toLocaleString([], {dateStyle: 'medium', timeStyle: 'short'})}</p>
+                            <button onClick={() => { setModal({ isOpen: true, slotId: slot.id, agenda: '' }); setBookingState('idle'); }} style={{ width: '100%', padding: '12px', background: '#3498db', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>Request Session</button>
+                        </div>
+                    ))}
+                </div>
+            )}
+
+            {activeTab === 'upcoming' && (
+                <div className="flex-row">
+                    {upcomingBookings.length === 0 ? <p>No upcoming sessions.</p> : upcomingBookings.slice().reverse().map(b => (
+                        <div key={b.id} className="flex-col" style={{ border: '1px solid #ddd', padding: '15px', borderRadius: '8px', background: 'white', borderLeft: b.status === 'APPROVED' ? '5px solid #27ae60' : '5px solid #f39c12' }}>
+                            <h4>Mentor: {b.slot.mentor.name}</h4>
+                            <p><strong>Time:</strong> {new Date(b.slot.startTimeUtc).toLocaleString()}</p>
+                            <p><strong>My Agenda:</strong> {b.studentAgenda}</p>
+                            <p style={{ color: b.status === 'APPROVED' ? '#27ae60' : '#f39c12', fontWeight: 'bold' }}>Status: {b.status}</p>
+                        </div>
+                    ))}
+                </div>
+            )}
+
+            {activeTab === 'chat' && (
+                <div className="chat-box">
+                    <div className="chat-contacts">
+                        <div style={{ padding: '15px', fontWeight: 'bold', borderBottom: '1px solid #ccc', background: '#eee' }}>My Connections</div>
+                        {contacts.length === 0 && <p style={{ padding: '15px', color: '#888', fontSize: '14px' }}>Book an approved session to unlock chat.</p>}
+                        {contacts.map(c => (
+                            <div key={c.id} className="contact-item" style={{ padding: '15px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px', background: activeChat === c.id ? '#e0f7fa' : 'transparent' }} onClick={() => setActiveChat(c.id)}>
+                                <img src={c.profileImageUrl || defaultAvatar} style={{ width: '35px', height: '35px', borderRadius: '50%', objectFit: 'cover' }} />
+                                <div style={{ fontWeight: 'bold', fontSize: '14px' }}>{c.name || c.email}</div>
+                            </div>
+                        ))}
+                    </div>
+                    <div className="chat-area">
+                        {activeChat ? (
+                            <>
+                                <div style={{ flex: 1, overflowY: 'auto', padding: '20px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                                    {chatMessages.map(m => (
+                                        <div key={m.id} style={{ alignSelf: m.sender.id === user.id ? 'flex-end' : 'flex-start' }}>
+                                            <div style={{ padding: '10px 15px', borderRadius: '20px', background: m.sender.id === user.id ? '#3498db' : '#ecf0f1', color: m.sender.id === user.id ? 'white' : 'black', maxWidth: '250px', wordWrap: 'break-word' }}>{m.content}</div>
+                                            <div style={{ fontSize: '10px', color: '#999', marginTop: '4px', textAlign: m.sender.id === user.id ? 'right' : 'left' }}>{new Date(m.timestamp).toLocaleTimeString([], {timeStyle: 'short'})}</div>
+                                        </div>
+                                    ))}
+                                </div>
+                                <div style={{ padding: '15px', background: '#eee', display: 'flex', gap: '10px' }}>
+                                    <input value={newMessage} onChange={e => setNewMessage(e.target.value)} onKeyPress={e => e.key === 'Enter' && sendMessage()} style={{ flex: 1, padding: '12px', borderRadius: '20px', border: '1px solid #ccc' }} placeholder="Type a message..." />
+                                    <button onClick={sendMessage} style={{ padding: '0 20px', background: '#27ae60', color: 'white', border: 'none', borderRadius: '20px', cursor: 'pointer', fontWeight: 'bold' }}>Send</button>
+                                </div>
+                            </>
+                        ) : <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#999' }}>Select a connection to chat</div>}
+                    </div>
+                </div>
+            )}
+
+            {activeTab === 'history' && (
+                <div className="table-responsive">
+                    <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                        <thead>
+                            <tr style={{ background: '#eee', textAlign: 'left' }}>
+                                <th style={{ padding: '12px' }}>Date</th>
+                                <th style={{ padding: '12px' }}>Mentor</th>
+                                <th style={{ padding: '12px' }}>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {historicalBookings.slice().reverse().map(b => (
+                                <tr key={b.id} style={{ borderBottom: '1px solid #ddd' }}>
+                                    <td style={{ padding: '12px' }}>{new Date(b.slot.startTimeUtc).toLocaleDateString()}</td>
+                                    <td style={{ padding: '12px' }}>{b.slot.mentor.name}</td>
+                                    <td style={{ padding: '12px', fontWeight: 'bold', color: b.status==='COMPLETED'?'#2980b9':'#e74c3c' }}>{b.status}</td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+            )}
+
+            {activeTab === 'profile' && (
+                <div style={{ background: '#f9f9f9', padding: '30px', borderRadius: '8px', maxWidth: '500px' }}>
+                    <form onSubmit={handleProfileUpdate} style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
+                        <div><label style={{ fontWeight: 'bold', fontSize: '14px' }}>Profile Image URL</label><input type="url" value={profileData.profileImageUrl} onChange={e => setProfileData({...profileData, profileImageUrl: e.target.value})} style={{ width: '100%', padding: '10px', border: '1px solid #ccc', borderRadius: '4px' }} /></div>
+                        <div><label style={{ fontWeight: 'bold', fontSize: '14px' }}>LinkedIn URL</label><input type="url" value={profileData.linkedinUrl} onChange={e => setProfileData({...profileData, linkedinUrl: e.target.value})} style={{ width: '100%', padding: '10px', border: '1px solid #ccc', borderRadius: '4px' }} /></div>
+                        <div><label style={{ fontWeight: 'bold', fontSize: '14px' }}>Brief Bio</label><textarea value={profileData.experience} onChange={e => setProfileData({...profileData, experience: e.target.value})} style={{ width: '100%', height: '100px', padding: '10px', border: '1px solid #ccc', borderRadius: '4px', resize: 'none' }} /></div>
+                        <button type="submit" style={{ padding: '12px', background: '#34495e', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>Save Profile</button>
+                    </form>
+                </div>
+            )}
+
+            {/* CUSTOM BOOKING MODAL */}
+            {modal.isOpen && (
+                <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000, padding: '20px' }}>
+                    <div style={{ background: 'white', padding: '30px', borderRadius: '8px', width: '100%', maxWidth: '400px', textAlign: 'center' }}>
+                        {bookingState === 'idle' && (
+                            <>
+                                <h3 style={{ marginTop: 0 }}>Session Agenda</h3>
+                                <textarea style={{ width: '100%', height: '100px', padding: '10px', boxSizing: 'border-box', border: '1px solid #ccc', borderRadius: '4px', marginBottom: '15px', resize: 'none' }} placeholder="What do you want to achieve?" value={modal.agenda} onChange={(e) => setModal({ ...modal, agenda: e.target.value })} />
+                                <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+                                    <button onClick={closeModal} style={{ padding: '8px 16px', background: '#ecf0f1', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>Cancel</button>
+                                    <button onClick={confirmBooking} style={{ padding: '8px 16px', background: '#3498db', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>Confirm Booking</button>
+                                </div>
+                            </>
+                        )}
+                        {bookingState === 'loading' && <h3>Processing Request...</h3>}
+                        {bookingState === 'success' && <h3 style={{ color: '#27ae60' }}>✓ Success!</h3>}
+                        {bookingState === 'error' && <h3 style={{ color: '#e74c3c' }}>✗ Booking Failed</h3>}
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+};
+
+export default StudentDashboard;
