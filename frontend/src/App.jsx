@@ -12,16 +12,14 @@ function App() {
   return (
     <AuthProvider>
       <Router>
-        {/* Global Responsive Navbar */}
         <Navbar />
-        
-        {/* Page Routing */}
         <Routes>
           <Route path="/" element={<Login />} />
           <Route path="/register" element={<Register />} />
-          <Route path="/student-dashboard" element={<StudentDashboard />} />
-          <Route path="/alumni-dashboard" element={<AlumniDashboard />} />
-          <Route path="/admin-dashboard" element={<AdminDashboard />} />
+          {/* NEW: Optional /:tab parameter for URL-driven navigation */}
+          <Route path="/student-dashboard/:tab?" element={<StudentDashboard />} />
+          <Route path="/alumni-dashboard/:tab?" element={<AlumniDashboard />} />
+          <Route path="/admin-dashboard/:tab?" element={<AdminDashboard />} />
         </Routes>
       </Router>
     </AuthProvider>

@@ -1,21 +1,24 @@
 import React, { useState, useEffect, useContext } from 'react';
 import api from '../api/axiosConfig';
 import { AuthContext } from '../context/AuthContext';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 
 const StudentDashboard = () => {
-    const { user, logout } = useContext(AuthContext);
+    const { user } = useContext(AuthContext);
     const navigate = useNavigate();
     
-    const [activeTab, setActiveTab] = useState('browse'); 
+    // NEW: We read the active tab directly from the URL!
+    const { tab } = useParams();
+    const activeTab = tab || 'browse'; 
+
     const [slots, setSlots] = useState([]);
     const [myBookings, setMyBookings] = useState([]);
     
-    // FIXED: Strict Modal State Management
     const [modal, setModal] = useState({ isOpen: false, slotId: null, agenda: '' });
     const [bookingState, setBookingState] = useState('idle'); 
+    const [agendaError, setAgendaError] = useState(''); // REPLACES ALERT
+    
     const [profileData, setProfileData] = useState({ linkedinUrl: '', experience: '', resumeUrl: '', profileImageUrl: '' });
-
     const [activeChat, setActiveChat] = useState(null);
     const [chatMessages, setChatMessages] = useState([]);
     const [newMessage, setNewMessage] = useState('');
@@ -27,7 +30,7 @@ const StudentDashboard = () => {
             setSlots(slotsRes.data);
             const bookingsRes = await api.get(`/bookings/student/${user.id}`);
             setMyBookings(bookingsRes.data);
-        } catch (error) { console.error(error); }
+        } catch (error) {}
     };
 
     const fetchMessages = async () => {
@@ -35,7 +38,7 @@ const StudentDashboard = () => {
         try {
             const res = await api.get(`/messages/${user.id}/${activeChat}`);
             setChatMessages(res.data);
-        } catch (error) { console.error(error); }
+        } catch (error) {}
     };
 
     useEffect(() => {
@@ -52,29 +55,37 @@ const StudentDashboard = () => {
         return () => clearInterval(chatInterval);
     }, [activeChat]);
 
+    // NEW: Mark messages as read when you open a chat
+    useEffect(() => {
+        if (activeChat && activeTab === 'chat') {
+            api.put(`/messages/read/${activeChat}/${user.id}`).catch(() => {});
+        }
+    }, [activeChat, chatMessages, activeTab, user.id]);
+
     if (!user) return null;
 
     const sendMessage = async () => {
         if (!newMessage.trim() || !activeChat) return;
-        try {
-            await api.post('/messages/send', { senderId: user.id, receiverId: activeChat, content: newMessage });
-            setNewMessage(''); fetchMessages();
-        } catch (error) { console.error(error); }
+        try { await api.post('/messages/send', { senderId: user.id, receiverId: activeChat, content: newMessage }); setNewMessage(''); fetchMessages(); } catch (e) {}
     };
 
-    // FIXED: Properly clear all modal states
     const closeModal = () => {
         setModal({ isOpen: false, slotId: null, agenda: '' });
+        setAgendaError('');
         setTimeout(() => setBookingState('idle'), 300);
     };
 
     const confirmBooking = async () => {
-        if(!modal.agenda.trim()) return alert("Please provide an agenda.");
+        if(!modal.agenda.trim()) {
+            setAgendaError("Please briefly describe what you want to discuss.");
+            return;
+        }
+        setAgendaError('');
         setBookingState('loading');
         try {
             await api.post(`/bookings/book/${modal.slotId}/${user.id}`, { agenda: modal.agenda });
             setBookingState('success');
-            setTimeout(() => { fetchData(); closeModal(); setActiveTab('upcoming'); }, 2000);
+            setTimeout(() => { fetchData(); closeModal(); navigate('/student-dashboard/upcoming'); }, 2000);
         } catch (error) {
             setBookingState('error');
             setTimeout(() => setBookingState('idle'), 3000);
@@ -85,14 +96,18 @@ const StudentDashboard = () => {
         e.preventDefault();
         try {
             const res = await api.put(`/users/${user.id}/profile`, profileData);
-            alert("Profile updated successfully!");
             localStorage.setItem('user', JSON.stringify(res.data));
             window.location.reload(); 
-        } catch (error) { alert("Failed to update profile."); }
+        } catch (e) {}
     };
 
     const upcomingBookings = myBookings.filter(b => ['PENDING', 'APPROVED'].includes(b.status));
     const historicalBookings = myBookings.filter(b => ['COMPLETED', 'CANCELLED', 'REJECTED', 'NO_SHOW'].includes(b.status));
+    
+    // GHOST SLOT FIX (Frontend side): Remove slots the student has already interacted with from the Browse feed
+    const historicalSlotIds = myBookings.map(b => b.slot.id);
+    const visibleSlots = slots.filter(slot => !historicalSlotIds.includes(slot.id));
+
     const contacts = Array.from(new Set(myBookings.filter(b => ['APPROVED', 'COMPLETED'].includes(b.status)).map(b => JSON.stringify(b.slot.mentor)))).map(s => JSON.parse(s));
     const defaultAvatar = 'https://cdn-icons-png.flaticon.com/512/149/149071.png';
 
@@ -101,42 +116,26 @@ const StudentDashboard = () => {
         .flex-row { display: flex; gap: 20px; flex-wrap: wrap; }
         .flex-col { flex: 1; min-width: 100%; }
         @media(min-width: 768px) { .flex-col { min-width: 300px; } }
-        .tabs { display: flex; border-bottom: 1px solid #ccc; margin-bottom: 20px; overflow-x: auto; white-space: nowrap; -webkit-overflow-scrolling: touch; }
-        .tab-btn { padding: 12px 20px; cursor: pointer; background: none; border: none; font-size: 16px; font-weight: bold; }
         .table-responsive { overflow-x: auto; -webkit-overflow-scrolling: touch; background: white; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
-        .chat-box { border: 1px solid #ccc; border-radius: 8px; display: flex; height: 60vh; overflow: hidden; background: white; }
+        .chat-box { border: 1px solid #ccc; border-radius: 8px; display: flex; height: 70vh; overflow: hidden; background: white; }
         .chat-contacts { width: 250px; background: #f9f9f9; border-right: 1px solid #ccc; overflow-y: auto; }
         .chat-area { flex: 1; display: flex; flex-direction: column; background: #fff; }
         @media (max-width: 768px) {
             .dash-container { padding: 10px; }
-            .chat-box { flex-direction: column; height: 75vh; }
+            .chat-box { flex-direction: column; height: 80vh; }
             .chat-contacts { width: 100%; height: 120px; border-right: none; border-bottom: 1px solid #ccc; display: flex; overflow-x: auto; }
-            .contact-item { min-width: 150px; border-bottom: none; border-right: 1px solid #eee; }
         }
     `;
 
     return (
         <div className="dash-container">
             <style>{css}</style>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '15px', marginBottom: '20px' }}>
-                <h2 style={{ margin: 0 }}>Student Portal</h2>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
-                    <img src={user.profileImageUrl || defaultAvatar} alt="Profile" style={{ width: '40px', height: '40px', borderRadius: '50%', objectFit: 'cover' }} />
-                    <button onClick={logout} style={{ padding: '8px 16px', cursor: 'pointer', background: '#e74c3c', color: 'white', border: 'none', borderRadius: '4px' }}>Logout</button>
-                </div>
-            </div>
             
-            <div className="tabs">
-                <button onClick={() => setActiveTab('browse')} className="tab-btn" style={{ borderBottom: activeTab === 'browse' ? '3px solid #3498db' : '3px solid transparent' }}>Browse</button>
-                <button onClick={() => setActiveTab('upcoming')} className="tab-btn" style={{ borderBottom: activeTab === 'upcoming' ? '3px solid #3498db' : '3px solid transparent' }}>Upcoming ({upcomingBookings.length})</button>
-                <button onClick={() => setActiveTab('chat')} className="tab-btn" style={{ borderBottom: activeTab === 'chat' ? '3px solid #3498db' : '3px solid transparent' }}>Messages</button>
-                <button onClick={() => setActiveTab('history')} className="tab-btn" style={{ borderBottom: activeTab === 'history' ? '3px solid #3498db' : '3px solid transparent' }}>History</button>
-                <button onClick={() => setActiveTab('profile')} className="tab-btn" style={{ borderBottom: activeTab === 'profile' ? '3px solid #3498db' : '3px solid transparent' }}>Profile</button>
-            </div>
+            {/* NO MORE LOCAL TABS - Handled by Navbar */}
 
             {activeTab === 'browse' && (
                 <div className="flex-row">
-                    {slots.length === 0 ? <p>No slots currently available.</p> : slots.map(slot => (
+                    {visibleSlots.length === 0 ? <p style={{ color: '#666' }}>No new slots currently available. Check back later!</p> : visibleSlots.map(slot => (
                         <div key={slot.id} className="flex-col" style={{ border: '1px solid #ddd', padding: '20px', borderRadius: '8px', background: 'white' }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '15px', marginBottom: '15px' }}>
                                 <img src={slot.mentor.profileImageUrl || defaultAvatar} style={{ width: '50px', height: '50px', borderRadius: '50%', objectFit: 'cover' }} />
@@ -169,9 +168,9 @@ const StudentDashboard = () => {
                 <div className="chat-box">
                     <div className="chat-contacts">
                         <div style={{ padding: '15px', fontWeight: 'bold', borderBottom: '1px solid #ccc', background: '#eee' }}>My Connections</div>
-                        {contacts.length === 0 && <p style={{ padding: '15px', color: '#888', fontSize: '14px' }}>Book an approved session to unlock chat.</p>}
+                        {contacts.length === 0 && <p style={{ padding: '15px', color: '#888', fontSize: '14px' }}>Approve a session to unlock chat.</p>}
                         {contacts.map(c => (
-                            <div key={c.id} className="contact-item" style={{ padding: '15px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px', background: activeChat === c.id ? '#e0f7fa' : 'transparent' }} onClick={() => setActiveChat(c.id)}>
+                            <div key={c.id} style={{ padding: '15px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px', background: activeChat === c.id ? '#e0f7fa' : 'transparent', borderBottom: '1px solid #eee' }} onClick={() => setActiveChat(c.id)}>
                                 <img src={c.profileImageUrl || defaultAvatar} style={{ width: '35px', height: '35px', borderRadius: '50%', objectFit: 'cover' }} />
                                 <div style={{ fontWeight: 'bold', fontSize: '14px' }}>{c.name || c.email}</div>
                             </div>
@@ -198,29 +197,6 @@ const StudentDashboard = () => {
                 </div>
             )}
 
-            {activeTab === 'history' && (
-                <div className="table-responsive">
-                    <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                        <thead>
-                            <tr style={{ background: '#eee', textAlign: 'left' }}>
-                                <th style={{ padding: '12px' }}>Date</th>
-                                <th style={{ padding: '12px' }}>Mentor</th>
-                                <th style={{ padding: '12px' }}>Status</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {historicalBookings.slice().reverse().map(b => (
-                                <tr key={b.id} style={{ borderBottom: '1px solid #ddd' }}>
-                                    <td style={{ padding: '12px' }}>{new Date(b.slot.startTimeUtc).toLocaleDateString()}</td>
-                                    <td style={{ padding: '12px' }}>{b.slot.mentor.name}</td>
-                                    <td style={{ padding: '12px', fontWeight: 'bold', color: b.status==='COMPLETED'?'#2980b9':'#e74c3c' }}>{b.status}</td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
-                </div>
-            )}
-
             {activeTab === 'profile' && (
                 <div style={{ background: '#f9f9f9', padding: '30px', borderRadius: '8px', maxWidth: '500px' }}>
                     <form onSubmit={handleProfileUpdate} style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
@@ -232,13 +208,14 @@ const StudentDashboard = () => {
                 </div>
             )}
 
-            {/* CUSTOM BOOKING MODAL */}
+            {/* CUSTOM BOOKING MODAL (No native alerts) */}
             {modal.isOpen && (
                 <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000, padding: '20px' }}>
                     <div style={{ background: 'white', padding: '30px', borderRadius: '8px', width: '100%', maxWidth: '400px', textAlign: 'center' }}>
                         {bookingState === 'idle' && (
                             <>
                                 <h3 style={{ marginTop: 0 }}>Session Agenda</h3>
+                                {agendaError && <p style={{ color: '#e74c3c', fontSize: '14px', marginBottom: '10px', fontWeight: 'bold' }}>{agendaError}</p>}
                                 <textarea style={{ width: '100%', height: '100px', padding: '10px', boxSizing: 'border-box', border: '1px solid #ccc', borderRadius: '4px', marginBottom: '15px', resize: 'none' }} placeholder="What do you want to achieve?" value={modal.agenda} onChange={(e) => setModal({ ...modal, agenda: e.target.value })} />
                                 <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
                                     <button onClick={closeModal} style={{ padding: '8px 16px', background: '#ecf0f1', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>Cancel</button>

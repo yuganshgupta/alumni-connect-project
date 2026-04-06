@@ -1,4 +1,4 @@
-import React, { useState, useContext } from 'react';
+import React, { useState, useContext, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { AuthContext } from '../context/AuthContext';
 
@@ -8,8 +8,18 @@ const Login = () => {
     const [error, setError] = useState('');
     const [isLoading, setIsLoading] = useState(false);
     
-    const { login } = useContext(AuthContext);
+    // Extracted both 'user' (for the bouncer) and 'login' (for the form)
+    const { user, login } = useContext(AuthContext);
     const navigate = useNavigate();
+
+    // BACK-BUTTON BOUNCER: Prevents seeing login page if already authenticated
+    useEffect(() => {
+        if (user) {
+            if (user.role === 'ADMIN') navigate('/admin-dashboard/users');
+            else if (user.role === 'ALUMNI') navigate('/alumni-dashboard/manage');
+            else navigate('/student-dashboard');
+        }
+    }, [user, navigate]);
 
     const handleSubmit = async (e) => {
         e.preventDefault();
@@ -25,9 +35,9 @@ const Login = () => {
                 
                 // Route the user to their specific dashboard based on their role
                 if (role === 'ADMIN') {
-                    navigate('/admin-dashboard');
+                    navigate('/admin-dashboard/users');
                 } else if (role === 'ALUMNI') {
-                    navigate('/alumni-dashboard');
+                    navigate('/alumni-dashboard/manage');
                 } else {
                     navigate('/student-dashboard'); 
                 }
@@ -41,14 +51,14 @@ const Login = () => {
     };
 
     const styles = {
-        container: { display: 'flex', height: '100vh', justifyContent: 'center', alignItems: 'center' },
+        container: { display: 'flex', height: '100vh', justifyContent: 'center', alignItems: 'center', background: '#f4f6f8' },
         card: { background: 'white', padding: '40px', borderRadius: '8px', boxShadow: '0 4px 12px rgba(0,0,0,0.1)', width: '100%', maxWidth: '400px' },
         title: { textAlign: 'center', marginBottom: '24px', color: '#2c3e50' },
         formGroup: { marginBottom: '16px' },
         label: { display: 'block', marginBottom: '8px', fontWeight: 'bold' },
         input: { width: '100%', padding: '10px', boxSizing: 'border-box', border: '1px solid #ccc', borderRadius: '4px' },
         button: { width: '100%', padding: '12px', background: '#3498db', color: 'white', border: 'none', borderRadius: '4px', fontSize: '16px', cursor: 'pointer', marginTop: '10px' },
-        errorMsg: { color: '#e74c3c', fontSize: '14px', marginBottom: '16px', textAlign: 'center' },
+        errorMsg: { color: '#e74c3c', fontSize: '14px', marginBottom: '16px', textAlign: 'center', fontWeight: 'bold' },
         linkText: { textAlign: 'center', marginTop: '20px', fontSize: '14px' }
     };
 
@@ -74,11 +84,11 @@ const Login = () => {
                 </form>
 
                 <div style={styles.linkText}>
-                    Don't have an account? <Link to="/register" style={{ color: '#3498db', textDecoration: 'none' }}>Register here</Link>
+                    Don't have an account? <Link to="/register" style={{ color: '#3498db', textDecoration: 'none', fontWeight: 'bold' }}>Register here</Link>
                 </div>
             </div>
         </div>
     );
 };
 
-export default Login
+export default Login;

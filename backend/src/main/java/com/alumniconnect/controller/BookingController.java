@@ -1,12 +1,7 @@
 package com.alumniconnect.controller;
 
-import com.alumniconnect.model.Booking;
-import com.alumniconnect.model.Role;
-import com.alumniconnect.model.Slot;
-import com.alumniconnect.model.User;
-import com.alumniconnect.repository.BookingRepository;
-import com.alumniconnect.repository.SlotRepository;
-import com.alumniconnect.repository.UserRepository;
+import com.alumniconnect.model.*;
+import com.alumniconnect.repository.*;
 import com.alumniconnect.service.EmailService;
 import org.springframework.lang.NonNull;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -14,9 +9,10 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
-
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api/bookings")
@@ -25,10 +21,17 @@ public class BookingController {
     @Autowired private SlotRepository slotRepository;
     @Autowired private BookingRepository bookingRepository;
     @Autowired private UserRepository userRepository;
+    @Autowired private SystemActivityRepository activityRepository;
     @Autowired private EmailService emailService;
 
+    // SUPER-FILTER: Hides past slots, blocked mentors, and already booked slots
     @GetMapping("/slots")
-    public List<Slot> getAvailableSlots() { return slotRepository.findByIsBookedFalse(); }
+    public List<Slot> getAvailableSlots() { 
+        return slotRepository.findByIsBookedFalse().stream()
+            .filter(slot -> !slot.getMentor().isBlocked())
+            .filter(slot -> slot.getStartTimeUtc().isAfter(LocalDateTime.now())) 
+            .collect(Collectors.toList());
+    }
 
     @GetMapping("/student/{studentId}")
     public ResponseEntity<List<Booking>> getStudentBookings(@PathVariable @NonNull Long studentId) {
@@ -39,15 +42,11 @@ public class BookingController {
     @Transactional 
     public ResponseEntity<?> bookSlot(@PathVariable @NonNull Long slotId, @PathVariable @NonNull Long studentId, @RequestBody Map<String, String> payload) {
         try {
-            Slot slot = slotRepository.findById(slotId).orElseThrow(() -> new RuntimeException("Slot not found"));
+            Slot slot = slotRepository.findById(slotId).orElseThrow();
             if (slot.isBooked()) return ResponseEntity.badRequest().body("Slot is already booked.");
             
-            User student = userRepository.findById(studentId).orElseThrow(() -> new RuntimeException("Student not found"));
-
-            // SECURITY: Prevent Alumni or Admins from booking slots meant for students
-            if (student.getRole() != Role.STUDENT) {
-                return ResponseEntity.status(HttpStatus.FORBIDDEN).body("Only registered students can book mentorship slots.");
-            }
+            User student = userRepository.findById(studentId).orElseThrow();
+            if (student.getRole() != Role.STUDENT) return ResponseEntity.status(HttpStatus.FORBIDDEN).body("Only students can book.");
 
             slot.setBooked(true);
             slotRepository.save(slot);
@@ -59,11 +58,8 @@ public class BookingController {
             booking.setStudentAgenda(payload.getOrDefault("agenda", "No agenda provided"));
             bookingRepository.save(booking);
 
-            try { emailService.sendBookingNotification(student.getEmail(), "Booking Requested", "Your request is pending mentor approval.");
-            } catch (Exception e) {}
-
             return ResponseEntity.ok(booking);
-        } catch (Exception e) { return ResponseEntity.internalServerError().body("Booking failed: " + e.getMessage()); }
+        } catch (Exception e) { return ResponseEntity.internalServerError().body("Booking failed."); }
     }
 
     @GetMapping("/mentor/{mentorId}")
@@ -73,30 +69,37 @@ public class BookingController {
 
     @PutMapping("/{bookingId}/approve")
     public ResponseEntity<?> approveBooking(@PathVariable @NonNull Long bookingId) {
-        Booking booking = bookingRepository.findById(bookingId).orElseThrow(() -> new RuntimeException("Booking not found"));
+        Booking booking = bookingRepository.findById(bookingId).orElseThrow();
         booking.setStatus("APPROVED");
         bookingRepository.save(booking);
-        try { emailService.sendBookingNotification(booking.getStudent().getEmail(), "Booking Approved", "Mentor approved!"); } catch (Exception e) {}
         return ResponseEntity.ok("Booking approved.");
     }
 
+    // FIXED: Captures Reject Reason and logs it
     @PutMapping("/{bookingId}/reject")
     @Transactional
-    public ResponseEntity<?> rejectBooking(@PathVariable @NonNull Long bookingId) {
-        Booking booking = bookingRepository.findById(bookingId).orElseThrow(() -> new RuntimeException("Booking not found"));
+    public ResponseEntity<?> rejectBooking(@PathVariable @NonNull Long bookingId, @RequestBody Map<String, String> payload) {
+        Booking booking = bookingRepository.findById(bookingId).orElseThrow();
         booking.setStatus("REJECTED");
+        booking.setCancellationReason(payload.get("reason"));
         bookingRepository.save(booking);
 
         Slot slot = booking.getSlot();
-        slot.setBooked(false); 
+        slot.setBooked(false); // Free the slot for other students
         slotRepository.save(slot);
+
+        SystemActivity log = new SystemActivity();
+        log.setAction("SLOT_REJECTED");
+        log.setDetails("Mentor rejected student " + booking.getStudent().getEmail() + ". Reason: " + payload.get("reason"));
+        activityRepository.save(log);
+
         return ResponseEntity.ok("Booking rejected.");
     }
 
     @PutMapping("/{bookingId}/cancel")
     @Transactional
     public ResponseEntity<?> cancelBooking(@PathVariable @NonNull Long bookingId, @RequestBody Map<String, String> payload) {
-        Booking booking = bookingRepository.findById(bookingId).orElseThrow(() -> new RuntimeException("Booking not found"));
+        Booking booking = bookingRepository.findById(bookingId).orElseThrow();
         booking.setStatus("CANCELLED");
         booking.setCancellationReason(payload.get("reason"));
         bookingRepository.save(booking);
@@ -109,7 +112,7 @@ public class BookingController {
 
     @PutMapping("/{bookingId}/status")
     public ResponseEntity<?> updateStatus(@PathVariable @NonNull Long bookingId, @RequestParam String status) {
-        Booking booking = bookingRepository.findById(bookingId).orElseThrow(() -> new RuntimeException("Booking not found"));
+        Booking booking = bookingRepository.findById(bookingId).orElseThrow();
         booking.setStatus(status.toUpperCase());
         bookingRepository.save(booking);
         return ResponseEntity.ok("Status updated.");

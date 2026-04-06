@@ -6,6 +6,7 @@ import com.alumniconnect.repository.MessageRepository;
 import com.alumniconnect.repository.UserRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -33,11 +34,26 @@ public class MessageController {
             msg.setSender(sender);
             msg.setReceiver(receiver);
             msg.setContent(payload.get("content"));
+            msg.setRead(false); // Default to unread
             messageRepository.save(msg);
             
             return ResponseEntity.ok(msg);
         } catch (Exception e) {
             return ResponseEntity.badRequest().body("Failed to send message");
         }
+    }
+
+    // NEW: Fetch the notification badge number
+    @GetMapping("/unread/{userId}")
+    public ResponseEntity<Long> getUnreadCount(@PathVariable Long userId) {
+        return ResponseEntity.ok(messageRepository.countByReceiverIdAndIsReadFalse(userId));
+    }
+
+    // NEW: Mark messages as read when user clicks the chat
+    @PutMapping("/read/{senderId}/{receiverId}")
+    @Transactional
+    public ResponseEntity<?> markAsRead(@PathVariable Long senderId, @PathVariable Long receiverId) {
+        messageRepository.markAsRead(senderId, receiverId);
+        return ResponseEntity.ok().build();
     }
 }

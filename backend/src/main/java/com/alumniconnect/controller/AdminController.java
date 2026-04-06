@@ -1,10 +1,7 @@
 package com.alumniconnect.controller;
 
-import com.alumniconnect.model.Booking;
-import com.alumniconnect.model.Role;
-import com.alumniconnect.model.User;
-import com.alumniconnect.repository.BookingRepository;
-import com.alumniconnect.repository.UserRepository;
+import com.alumniconnect.model.*;
+import com.alumniconnect.repository.*;
 import org.springframework.lang.NonNull;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
@@ -19,37 +16,39 @@ import java.util.Map;
 public class AdminController {
 
     @Autowired private UserRepository userRepository;
-    @Autowired private BookingRepository bookingRepository;
+    @Autowired private SystemActivityRepository activityRepository;
     @Autowired private PasswordEncoder passwordEncoder;
 
-    @GetMapping("/pending-alumni")
-    public ResponseEntity<List<User>> getPendingAlumni() {
-        return ResponseEntity.ok(userRepository.findByRoleAndIsVerifiedFalse(Role.ALUMNI));
-    }
+    @GetMapping("/users")
+    public ResponseEntity<List<User>> getAllUsers() { return ResponseEntity.ok(userRepository.findAll()); }
 
     @PutMapping("/verify/{userId}")
     public ResponseEntity<?> verifyAlumni(@PathVariable @NonNull Long userId) {
         User user = userRepository.findById(userId).orElseThrow();
         user.setVerified(true);
         userRepository.save(user);
+        
+        SystemActivity log = new SystemActivity();
+        log.setAction("USER_VERIFIED");
+        log.setDetails("Admin approved alumni account: " + user.getEmail());
+        activityRepository.save(log);
+        
         return ResponseEntity.ok("Alumni verified successfully.");
     }
 
-    // --- NEW ADMIN SUPERPOWERS ---
-
-    @GetMapping("/users")
-    public ResponseEntity<List<User>> getAllUsers() {
-        return ResponseEntity.ok(userRepository.findAll());
-    }
-
     @PutMapping("/users/{userId}/toggle-block")
-    public ResponseEntity<?> toggleBlock(@PathVariable @NonNull Long userId) {
+    public ResponseEntity<?> toggleBlock(@PathVariable @NonNull Long userId, @RequestBody Map<String, String> payload) {
         User user = userRepository.findById(userId).orElseThrow();
-        // Prevent admin from blocking themselves
         if(user.getRole() == Role.ADMIN) return ResponseEntity.badRequest().body("Cannot block an Admin.");
         
         user.setBlocked(!user.isBlocked());
         userRepository.save(user);
+
+        SystemActivity log = new SystemActivity();
+        log.setAction(user.isBlocked() ? "USER_BANNED" : "USER_UNBANNED");
+        log.setDetails("Target: " + user.getEmail() + " | Reason: " + payload.getOrDefault("reason", "No reason provided"));
+        activityRepository.save(log);
+
         return ResponseEntity.ok(user.isBlocked() ? "User blocked." : "User restored.");
     }
 
@@ -62,7 +61,7 @@ public class AdminController {
     }
 
     @GetMapping("/system-logs")
-    public ResponseEntity<List<Booking>> getSystemLogs() {
-        return ResponseEntity.ok(bookingRepository.findAll());
+    public ResponseEntity<List<SystemActivity>> getSystemLogs() {
+        return ResponseEntity.ok(activityRepository.findAll());
     }
 }

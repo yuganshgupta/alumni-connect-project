@@ -25,4 +25,8 @@ public class Message {
 
     @Column(nullable = false)
     private LocalDateTime timestamp = LocalDateTime.now();
+
+    // NEW: Tracks if the message has been seen
+    @Column(nullable = false)
+    private boolean isRead = false; 
 }
