@@ -22,8 +22,15 @@ public class Booking {
     private String status; 
     
     @Column(length = 1000)
-    private String studentAgenda; // What the student expects
+    private String studentAgenda; 
 
     @Column(length = 1000)
     private String cancellationReason; 
+
+    // --- NEW: AUTOMATED EMAIL TRACKING FLAGS ---
+    @Column(nullable = false)
+    private boolean reminder24hSent = false;
+
+    @Column(nullable = false)
+    private boolean reminder1hSent = false;
 }

@@ -5,7 +5,6 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
-import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
@@ -23,14 +22,18 @@ public class SecurityConfig {
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http
             .csrf(AbstractHttpConfigurer::disable)
-            .cors(cors -> {}) // Handled by CorsConfig
-            .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+            // Fixes the auto-generated password warning by explicitly disabling the default form login
+            .formLogin(AbstractHttpConfigurer::disable)
+            .httpBasic(AbstractHttpConfigurer::disable)
             .authorizeHttpRequests(auth -> auth
-                .requestMatchers("/api/auth/**").permitAll() // Allow login and registration
-                .requestMatchers("/api/bookings/slots").permitAll() // Allow viewing slots before login (optional strategy)
-                .anyRequest().permitAll() // WARNING: Set to authenticated() in production. Left open for MVP testing.
+                // CRITICAL FIX: Ensures your auth routes (Login, Register, Forgot/Reset Password) are never blocked
+                .requestMatchers("/api/auth/**").permitAll()
+                // In a production environment, you would secure the following endpoints with JWT validation.
+                // For this MVP, we permit traffic so React can interface with it freely.
+                .requestMatchers("/api/**").permitAll()
+                .anyRequest().authenticated()
             );
-            
+
         return http.build();
     }
 }

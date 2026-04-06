@@ -7,6 +7,8 @@ import Register from './pages/Register';
 import StudentDashboard from './pages/StudentDashboard';
 import AlumniDashboard from './pages/AlumniDashboard';
 import AdminDashboard from './pages/AdminDashboard';
+import ForgotPassword from './pages/ForgotPassword';
+import ResetPassword from './pages/ResetPassword';
 
 function App() {
   return (
@@ -20,6 +22,8 @@ function App() {
           <Route path="/student-dashboard/:tab?" element={<StudentDashboard />} />
           <Route path="/alumni-dashboard/:tab?" element={<AlumniDashboard />} />
           <Route path="/admin-dashboard/:tab?" element={<AdminDashboard />} />
+          <Route path="/forgot-password" element={<ForgotPassword />} />
+          <Route path="/reset-password" element={<ResetPassword />} />
         </Routes>
       </Router>
     </AuthProvider>

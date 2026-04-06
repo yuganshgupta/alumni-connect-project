@@ -16,9 +16,14 @@ const StudentDashboard = () => {
     
     const [modal, setModal] = useState({ isOpen: false, slotId: null, agenda: '' });
     const [bookingState, setBookingState] = useState('idle'); 
-    const [agendaError, setAgendaError] = useState(''); // REPLACES ALERT
+    const [agendaError, setAgendaError] = useState(''); 
     
     const [profileData, setProfileData] = useState({ linkedinUrl: '', experience: '', resumeUrl: '', profileImageUrl: '' });
+
+    // NEW: Notification State
+    const [notifyPrefs, setNotifyPrefs] = useState({ bookingUpdates: true, sessionReminders: true, chatAlerts: true });
+    const [isSavingPrefs, setIsSavingPrefs] = useState(false);
+
     const [activeChat, setActiveChat] = useState(null);
     const [chatMessages, setChatMessages] = useState([]);
     const [newMessage, setNewMessage] = useState('');
@@ -30,6 +35,10 @@ const StudentDashboard = () => {
             setSlots(slotsRes.data);
             const bookingsRes = await api.get(`/bookings/student/${user.id}`);
             setMyBookings(bookingsRes.data);
+            
+            // NEW: Fetch preferences
+            const prefsRes = await api.get(`/users/${user.id}/preferences`);
+            if (prefsRes.data) setNotifyPrefs(prefsRes.data);
         } catch (error) {}
     };
 
@@ -55,7 +64,7 @@ const StudentDashboard = () => {
         return () => clearInterval(chatInterval);
     }, [activeChat]);
 
-    // NEW: Mark messages as read when you open a chat
+    // Mark messages as read when you open a chat
     useEffect(() => {
         if (activeChat && activeTab === 'chat') {
             api.put(`/messages/read/${activeChat}/${user.id}`).catch(() => {});
@@ -63,6 +72,22 @@ const StudentDashboard = () => {
     }, [activeChat, chatMessages, activeTab, user.id]);
 
     if (!user) return null;
+
+    const handlePrefsUpdate = async (settingKey) => {
+        setIsSavingPrefs(true);
+        const originalPrefs = { ...notifyPrefs };
+        const updatedPrefs = { ...notifyPrefs, [settingKey]: !notifyPrefs[settingKey] };
+        setNotifyPrefs(updatedPrefs); // Optimistic UI update
+        
+        try {
+            await api.put(`/users/${user.id}/preferences`, updatedPrefs);
+        } catch (e) {
+            alert("Failed to save preference.");
+            setNotifyPrefs(originalPrefs); // Revert on failure
+        } finally {
+            setIsSavingPrefs(false);
+        }
+    };
 
     const sendMessage = async () => {
         if (!newMessage.trim() || !activeChat) return;
@@ -130,8 +155,6 @@ const StudentDashboard = () => {
     return (
         <div className="dash-container">
             <style>{css}</style>
-            
-            {/* NO MORE LOCAL TABS - Handled by Navbar */}
 
             {activeTab === 'browse' && (
                 <div className="flex-row">
@@ -197,14 +220,91 @@ const StudentDashboard = () => {
                 </div>
             )}
 
+            {activeTab === 'history' && (
+                <div className="table-responsive">
+                    <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                        <thead>
+                            <tr style={{ background: '#eee', textAlign: 'left' }}>
+                                <th style={{ padding: '12px' }}>Date</th>
+                                <th style={{ padding: '12px' }}>Mentor</th>
+                                <th style={{ padding: '12px' }}>Status</th>
+                                <th style={{ padding: '12px' }}>Feedback/Reason</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {historicalBookings.slice().reverse().map(b => (
+                                <tr key={b.id} style={{ borderBottom: '1px solid #ddd' }}>
+                                    <td style={{ padding: '12px' }}>{new Date(b.slot.startTimeUtc).toLocaleDateString()}</td>
+                                    <td style={{ padding: '12px' }}>{b.slot.mentor.name}</td>
+                                    <td style={{ padding: '12px', fontWeight: 'bold', color: b.status==='COMPLETED'?'#2980b9':'#e74c3c' }}>{b.status}</td>
+                                    <td style={{ padding: '12px', fontSize: '14px', color: '#666' }}>{b.cancellationReason || '-'}</td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+            )}
+
             {activeTab === 'profile' && (
-                <div style={{ background: '#f9f9f9', padding: '30px', borderRadius: '8px', maxWidth: '500px' }}>
-                    <form onSubmit={handleProfileUpdate} style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
-                        <div><label style={{ fontWeight: 'bold', fontSize: '14px' }}>Profile Image URL</label><input type="url" value={profileData.profileImageUrl} onChange={e => setProfileData({...profileData, profileImageUrl: e.target.value})} style={{ width: '100%', padding: '10px', border: '1px solid #ccc', borderRadius: '4px' }} /></div>
-                        <div><label style={{ fontWeight: 'bold', fontSize: '14px' }}>LinkedIn URL</label><input type="url" value={profileData.linkedinUrl} onChange={e => setProfileData({...profileData, linkedinUrl: e.target.value})} style={{ width: '100%', padding: '10px', border: '1px solid #ccc', borderRadius: '4px' }} /></div>
-                        <div><label style={{ fontWeight: 'bold', fontSize: '14px' }}>Brief Bio</label><textarea value={profileData.experience} onChange={e => setProfileData({...profileData, experience: e.target.value})} style={{ width: '100%', height: '100px', padding: '10px', border: '1px solid #ccc', borderRadius: '4px', resize: 'none' }} /></div>
-                        <button type="submit" style={{ padding: '12px', background: '#34495e', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>Save Profile</button>
-                    </form>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '30px' }}>
+                    {/* EXISTING PROFILE FORM */}
+                    <div style={{ background: '#f9f9f9', padding: '30px', borderRadius: '8px', flex: '1', minWidth: '300px', maxWidth: '500px' }}>
+                        <h3 style={{ marginTop: 0 }}>My Profile</h3>
+                        <form onSubmit={handleProfileUpdate} style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
+                            <div><label style={{ fontWeight: 'bold', fontSize: '14px' }}>Profile Image URL</label><input type="url" value={profileData.profileImageUrl} onChange={e => setProfileData({...profileData, profileImageUrl: e.target.value})} style={{ width: '100%', padding: '10px', border: '1px solid #ccc', borderRadius: '4px' }} /></div>
+                            <div><label style={{ fontWeight: 'bold', fontSize: '14px' }}>LinkedIn URL</label><input type="url" value={profileData.linkedinUrl} onChange={e => setProfileData({...profileData, linkedinUrl: e.target.value})} style={{ width: '100%', padding: '10px', border: '1px solid #ccc', borderRadius: '4px' }} /></div>
+                            <div><label style={{ fontWeight: 'bold', fontSize: '14px' }}>Brief Bio</label><textarea value={profileData.experience} onChange={e => setProfileData({...profileData, experience: e.target.value})} style={{ width: '100%', height: '100px', padding: '10px', border: '1px solid #ccc', borderRadius: '4px', resize: 'none' }} /></div>
+                            <button type="submit" style={{ padding: '12px', background: '#34495e', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>Save Profile</button>
+                        </form>
+                    </div>
+
+                    {/* NEW: NOTIFICATION SETTINGS */}
+                    <div style={{ background: '#f9f9f9', padding: '30px', borderRadius: '8px', flex: '1', minWidth: '300px', maxWidth: '500px' }}>
+                        <h3 style={{ marginTop: 0 }}>Notification Settings</h3>
+                        <p style={{ fontSize: '14px', color: '#666', marginBottom: '20px' }}>Control what emails you receive from Alumni Connect. Security and account alerts cannot be disabled.</p>
+                        
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingBottom: '15px', borderBottom: '1px solid #eee' }}>
+                                <div>
+                                    <div style={{ fontWeight: 'bold', color: '#2c3e50' }}>Booking Updates</div>
+                                    <div style={{ fontSize: '12px', color: '#7f8c8d' }}>Emails when sessions are approved, rejected, or cancelled.</div>
+                                </div>
+                                <label style={{ position: 'relative', display: 'inline-block', width: '50px', height: '24px' }}>
+                                    <input type="checkbox" checked={notifyPrefs.bookingUpdates} onChange={() => handlePrefsUpdate('bookingUpdates')} disabled={isSavingPrefs} style={{ opacity: 0, width: 0, height: 0 }} />
+                                    <span style={{ position: 'absolute', cursor: 'pointer', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: notifyPrefs.bookingUpdates ? '#27ae60' : '#ccc', transition: '.4s', borderRadius: '34px' }}>
+                                        <span style={{ position: 'absolute', content: '""', height: '16px', width: '16px', left: notifyPrefs.bookingUpdates ? '30px' : '4px', bottom: '4px', backgroundColor: 'white', transition: '.4s', borderRadius: '50%' }}></span>
+                                    </span>
+                                </label>
+                            </div>
+
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingBottom: '15px', borderBottom: '1px solid #eee' }}>
+                                <div>
+                                    <div style={{ fontWeight: 'bold', color: '#2c3e50' }}>Session Reminders</div>
+                                    <div style={{ fontSize: '12px', color: '#7f8c8d' }}>Automated 24-hour and 1-hour upcoming session alerts.</div>
+                                </div>
+                                <label style={{ position: 'relative', display: 'inline-block', width: '50px', height: '24px' }}>
+                                    <input type="checkbox" checked={notifyPrefs.sessionReminders} onChange={() => handlePrefsUpdate('sessionReminders')} disabled={isSavingPrefs} style={{ opacity: 0, width: 0, height: 0 }} />
+                                    <span style={{ position: 'absolute', cursor: 'pointer', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: notifyPrefs.sessionReminders ? '#27ae60' : '#ccc', transition: '.4s', borderRadius: '34px' }}>
+                                        <span style={{ position: 'absolute', content: '""', height: '16px', width: '16px', left: notifyPrefs.sessionReminders ? '30px' : '4px', bottom: '4px', backgroundColor: 'white', transition: '.4s', borderRadius: '50%' }}></span>
+                                    </span>
+                                </label>
+                            </div>
+
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <div>
+                                    <div style={{ fontWeight: 'bold', color: '#2c3e50' }}>Security & Account</div>
+                                    <div style={{ fontSize: '12px', color: '#7f8c8d' }}>Password resets and admin notices.</div>
+                                </div>
+                                {/* Locked Toggle */}
+                                <label style={{ position: 'relative', display: 'inline-block', width: '50px', height: '24px', opacity: 0.5 }}>
+                                    <input type="checkbox" checked={true} disabled style={{ opacity: 0, width: 0, height: 0 }} />
+                                    <span style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: '#3498db', borderRadius: '34px' }}>
+                                        <span style={{ position: 'absolute', height: '16px', width: '16px', left: '30px', bottom: '4px', backgroundColor: 'white', borderRadius: '50%' }}></span>
+                                    </span>
+                                </label>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             )}
 

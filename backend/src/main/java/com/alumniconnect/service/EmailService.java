@@ -1,22 +1,37 @@
 package com.alumniconnect.service;
 
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.mail.SimpleMailMessage;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.stereotype.Service;
 
 @Service
 public class EmailService {
-    
+
     @Autowired
     private JavaMailSender mailSender;
 
-    public void sendBookingNotification(String toEmail, String subject, String body) {
-        SimpleMailMessage message = new SimpleMailMessage();
-        message.setFrom("noreply@alumniconnect.com");
-        message.setTo(toEmail);
-        message.setSubject(subject);
-        message.setText(body);
-        mailSender.send(message);
+    @Value("${spring.mail.username}")
+    private String senderEmail;
+
+    /**
+     * Sends a simple text email.
+     */
+    public void sendSimpleEmail(String toEmail, String subject, String body) {
+        try {
+            SimpleMailMessage message = new SimpleMailMessage();
+            message.setFrom(senderEmail);
+            message.setTo(toEmail);
+            message.setSubject(subject);
+            message.setText(body);
+
+            mailSender.send(message);
+            System.out.println("Email successfully sent to: " + toEmail);
+            
+        } catch (Exception e) {
+            System.err.println("Failed to send email: " + e.getMessage());
+            // In a production app, you might want to throw a custom exception here
+        }
     }
 }

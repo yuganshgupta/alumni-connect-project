@@ -9,6 +9,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
+
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
@@ -23,8 +24,17 @@ public class BookingController {
     @Autowired private UserRepository userRepository;
     @Autowired private SystemActivityRepository activityRepository;
     @Autowired private EmailService emailService;
+    
+    // NEW: Inject Preferences Repository
+    @Autowired private NotificationPreferencesRepository prefsRepository;
 
-    // SUPER-FILTER: Hides past slots, blocked mentors, and already booked slots
+    // Helper method to check preferences (defaults to true if record doesn't exist)
+    private boolean wantsBookingUpdates(Long userId) {
+        return prefsRepository.findByUserId(userId)
+                .map(NotificationPreferences::isBookingUpdates)
+                .orElse(true);
+    }
+
     @GetMapping("/slots")
     public List<Slot> getAvailableSlots() { 
         return slotRepository.findByIsBookedFalse().stream()
@@ -58,6 +68,23 @@ public class BookingController {
             booking.setStudentAgenda(payload.getOrDefault("agenda", "No agenda provided"));
             bookingRepository.save(booking);
 
+            // 1. ALERT THE MENTOR (If preference is ON)
+            if (wantsBookingUpdates(slot.getMentor().getId())) {
+                try {
+                    emailService.sendSimpleEmail(slot.getMentor().getEmail(), "New Mentorship Request", 
+                        "Student " + student.getEmail() + " has requested a session.\nAgenda: " + booking.getStudentAgenda());
+                } catch (Exception e) {}
+            }
+
+            // 2. CONFIRMATION TO THE STUDENT (If preference is ON)
+            if (wantsBookingUpdates(student.getId())) {
+                try {
+                    String mentorName = slot.getMentor().getName() != null ? slot.getMentor().getName() : "your requested mentor";
+                    emailService.sendSimpleEmail(student.getEmail(), "Session Request Sent \uD83D\uDCE4", 
+                        "Your mentorship session request has been successfully sent to " + mentorName + ".\n\nYou will be notified via email as soon as they approve or decline the request.");
+                } catch (Exception e) {}
+            }
+
             return ResponseEntity.ok(booking);
         } catch (Exception e) { return ResponseEntity.internalServerError().body("Booking failed."); }
     }
@@ -72,10 +99,18 @@ public class BookingController {
         Booking booking = bookingRepository.findById(bookingId).orElseThrow();
         booking.setStatus("APPROVED");
         bookingRepository.save(booking);
+        
+        // EMAIL STUDENT (If preference is ON)
+        if (wantsBookingUpdates(booking.getStudent().getId())) {
+            try {
+                emailService.sendSimpleEmail(booking.getStudent().getEmail(), "Session Approved \uD83C\uDF89", 
+                    "Great news! Your mentor has approved your upcoming session request. Please check your dashboard for chat access.");
+            } catch (Exception e) {}
+        }
+            
         return ResponseEntity.ok("Booking approved.");
     }
 
-    // FIXED: Captures Reject Reason and logs it
     @PutMapping("/{bookingId}/reject")
     @Transactional
     public ResponseEntity<?> rejectBooking(@PathVariable @NonNull Long bookingId, @RequestBody Map<String, String> payload) {
@@ -85,13 +120,21 @@ public class BookingController {
         bookingRepository.save(booking);
 
         Slot slot = booking.getSlot();
-        slot.setBooked(false); // Free the slot for other students
+        slot.setBooked(false); 
         slotRepository.save(slot);
 
         SystemActivity log = new SystemActivity();
         log.setAction("SLOT_REJECTED");
         log.setDetails("Mentor rejected student " + booking.getStudent().getEmail() + ". Reason: " + payload.get("reason"));
         activityRepository.save(log);
+
+        // EMAIL STUDENT (If preference is ON)
+        if (wantsBookingUpdates(booking.getStudent().getId())) {
+            try {
+                emailService.sendSimpleEmail(booking.getStudent().getEmail(), "Session Declined", 
+                    "Your mentor had to decline your session request. Reason: " + payload.get("reason"));
+            } catch (Exception e) {}
+        }
 
         return ResponseEntity.ok("Booking rejected.");
     }
@@ -107,6 +150,23 @@ public class BookingController {
         Slot slot = booking.getSlot();
         slot.setBooked(false); 
         slotRepository.save(slot);
+
+        // EMAIL STUDENT (If preference is ON)
+        if (wantsBookingUpdates(booking.getStudent().getId())) {
+            try {
+                emailService.sendSimpleEmail(booking.getStudent().getEmail(), "Session Cancelled", 
+                    "An approved session was cancelled. Reason: " + payload.get("reason"));
+            } catch (Exception e) {}
+        }
+
+        // OPTIONAL: If a student cancels, you might want to email the mentor here too!
+        if (wantsBookingUpdates(booking.getSlot().getMentor().getId())) {
+            try {
+                emailService.sendSimpleEmail(booking.getSlot().getMentor().getEmail(), "Session Cancelled", 
+                    "An approved session was cancelled. Reason: " + payload.get("reason"));
+            } catch (Exception e) {}
+        }
+
         return ResponseEntity.ok("Booking cancelled.");
     }
 
