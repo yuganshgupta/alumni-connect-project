@@ -14,7 +14,7 @@ import org.springframework.web.bind.annotation.*;
 public class UserController {
 
     @Autowired private UserRepository userRepository;
-    @Autowired private NotificationPreferencesRepository prefsRepository; // NEW
+    @Autowired private NotificationPreferencesRepository prefsRepository; 
 
     @GetMapping("/{id}/profile")
     public ResponseEntity<?> getProfile(@PathVariable @NonNull Long id) {
@@ -29,17 +29,21 @@ public class UserController {
             user.setExperience(updatedData.getExperience());
             user.setProfileImageUrl(updatedData.getProfileImageUrl());
             user.setCompany(updatedData.getCompany());
+            
+            // NEW: Save the meeting link
+            user.setMeetingLink(updatedData.getMeetingLink());
+            
             userRepository.save(user);
             return ResponseEntity.ok(user);
         } catch (Exception e) { return ResponseEntity.badRequest().body("Failed."); }
     }
 
-    // --- NEW: NOTIFICATION PREFERENCES ENDPOINTS ---
+    // --- NOTIFICATION PREFERENCES ENDPOINTS ---
     
     @GetMapping("/{id}/preferences")
     public ResponseEntity<NotificationPreferences> getPreferences(@PathVariable @NonNull Long id) {
         User user = userRepository.findById(id).orElseThrow();
-        // If they don't have preferences yet (older accounts), return a default true object
+        // If they don't have preferences yet, return a default true object
         NotificationPreferences prefs = prefsRepository.findByUserId(id).orElseGet(() -> {
             NotificationPreferences newPrefs = new NotificationPreferences();
             newPrefs.setUser(user);

@@ -27,10 +27,14 @@ public class Booking {
     @Column(length = 1000)
     private String cancellationReason; 
 
-    // --- NEW: AUTOMATED EMAIL TRACKING FLAGS ---
+    // --- AUTOMATED EMAIL TRACKING FLAGS ---
     @Column(nullable = false)
     private boolean reminder24hSent = false;
 
     @Column(nullable = false)
     private boolean reminder1hSent = false;
+
+    // --- NEW: Unique Jitsi Room ID ---
+    @Column(length = 500)
+    private String meetingUrl;
 }

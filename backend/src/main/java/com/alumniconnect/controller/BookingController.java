@@ -25,7 +25,7 @@ public class BookingController {
     @Autowired private SystemActivityRepository activityRepository;
     @Autowired private EmailService emailService;
     
-    // NEW: Inject Preferences Repository
+    // Inject Preferences Repository
     @Autowired private NotificationPreferencesRepository prefsRepository;
 
     // Helper method to check preferences (defaults to true if record doesn't exist)
@@ -98,13 +98,19 @@ public class BookingController {
     public ResponseEntity<?> approveBooking(@PathVariable @NonNull Long bookingId) {
         Booking booking = bookingRepository.findById(bookingId).orElseThrow();
         booking.setStatus("APPROVED");
+        
+        // --- NEW: GENERATE UNIQUE SECURE ROOM ID ---
+        // Creates a string like "AlumniConnect-8f7d9a-..."
+        String uniqueRoomId = "AlumniConnect-" + java.util.UUID.randomUUID().toString();
+        booking.setMeetingUrl(uniqueRoomId);
+        
         bookingRepository.save(booking);
         
         // EMAIL STUDENT (If preference is ON)
         if (wantsBookingUpdates(booking.getStudent().getId())) {
             try {
                 emailService.sendSimpleEmail(booking.getStudent().getEmail(), "Session Approved \uD83C\uDF89", 
-                    "Great news! Your mentor has approved your upcoming session request. Please check your dashboard for chat access.");
+                    "Great news! Your mentor has approved your upcoming session request.\n\nYour secure video room is ready. Log in to your dashboard to join the call at the scheduled time.");
             } catch (Exception e) {}
         }
             

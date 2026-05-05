@@ -13,6 +13,8 @@ const AdminDashboard = () => {
     const [allUsers, setAllUsers] = useState([]);
     const [systemLogs, setSystemLogs] = useState([]);
     
+    // NEW: Added isLoading state
+    const [isLoading, setIsLoading] = useState(false);
     const [modal, setModal] = useState({ isOpen: false, type: '', userId: null, input: '', error: '' });
 
     const fetchData = async () => {
@@ -35,26 +37,58 @@ const AdminDashboard = () => {
 
     const executeAdminAction = async () => {
         setModal({ ...modal, error: '' });
+        setIsLoading(true); // START SPINNER
         try {
             if (modal.type === 'verify') {
                 await api.put(`/admin/verify/${modal.userId}`);
             } else if (modal.type === 'block') {
-                // FIXED: Demands reason via modal, NOT alert
-                if (!modal.input) return setModal({ ...modal, error: "A reason is required for the audit logs." });
+                if (!modal.input) {
+                    setIsLoading(false);
+                    return setModal({ ...modal, error: "A reason is required for the audit logs." });
+                }
                 await api.put(`/admin/users/${modal.userId}/toggle-block`, { reason: modal.input });
             } else if (modal.type === 'password') {
-                if (!modal.input) return setModal({ ...modal, error: "Password cannot be empty." });
+                if (!modal.input) {
+                    setIsLoading(false);
+                    return setModal({ ...modal, error: "Password cannot be empty." });
+                }
                 await api.put(`/admin/users/${modal.userId}/reset-password`, { newPassword: modal.input });
             }
-            fetchData();
-            setModal({ isOpen: false, error: '' });
-        } catch (error) { setModal({ ...modal, error: "Action failed." }); }
+            await fetchData(); // Wait for data to refresh
+            setModal({ isOpen: false, type: '', userId: null, input: '', error: '' }); // CLOSE AND CLEAR MODAL
+        } catch (error) { 
+            setModal({ ...modal, error: "Action failed." }); 
+        } finally {
+            setIsLoading(false); // STOP SPINNER
+        }
     };
 
     const css = `
-        .admin-container { padding: 20px; font-family: Arial; max-width: 1200px; margin: 0 auto; }
-        .table-responsive { overflow-x: auto; background: white; box-shadow: 0 1px 3px rgba(0,0,0,0.1); border-radius: 8px; -webkit-overflow-scrolling: touch; }
-        @media (max-width: 768px) { .admin-container { padding: 10px; } }
+        .dash-container { padding: 20px; font-family: Arial; max-width: 1200px; margin: 0 auto; }
+        .flex-row { display: flex; gap: 20px; flex-wrap: wrap; }
+        .flex-col { flex: 1; min-width: 100%; }
+        @media(min-width: 768px) { .flex-col { min-width: 300px; } }
+        .table-responsive { overflow-x: auto; -webkit-overflow-scrolling: touch; background: white; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+        
+        /* DESKTOP CHAT */
+        .chat-box { border: 1px solid #ccc; border-radius: 8px; display: flex; height: 70vh; overflow: hidden; background: white; }
+        .chat-contacts { width: 250px; background: #f9f9f9; border-right: 1px solid #ccc; overflow-y: auto; }
+        .chat-area { flex: 1; display: flex; flex-direction: column; background: #fff; position: relative; }
+        .messages-container { flex: 1; overflow-y: auto; padding: 20px; display: flex; flexDirection: column; gap: 10px; }
+        
+        /* MOBILE CHAT OVERHAUL */
+        @media (max-width: 768px) {
+            .dash-container { padding: 10px; }
+            .chat-box { flex-direction: column; height: calc(100vh - 120px); border-radius: 0; border: none; }
+            .chat-contacts { width: 100%; height: 90px; min-height: 90px; border-right: none; border-bottom: 1px solid #ccc; display: flex; overflow-x: auto; white-space: nowrap; -webkit-overflow-scrolling: touch; }
+            .contact-item { display: inline-flex; flex-direction: column; justify-content: center; align-items: center; min-width: 80px; padding: 10px; border-bottom: none; border-right: 1px solid #eee; }
+            .contact-item img { margin-bottom: 5px; }
+            .contact-item div { font-size: 12px; overflow: hidden; text-overflow: ellipsis; max-width: 70px; }
+            
+            /* Pin the input to the bottom */
+            .chat-area { flex: 1; display: flex; flex-direction: column; }
+            .chat-input-bar { padding: 10px; background: #eee; display: flex; gap: 8px; flex-shrink: 0; }
+        }
     `;
 
     return (
@@ -150,8 +184,11 @@ const AdminDashboard = () => {
                         )}
 
                         <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
-                            <button onClick={() => setModal({isOpen: false, error: ''})} style={{ padding: '8px 16px', background: '#ecf0f1', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>Cancel</button>
-                            <button onClick={executeAdminAction} style={{ padding: '8px 16px', background: modal.type === 'block' ? '#e74c3c' : '#27ae60', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>Confirm Action</button>
+                            <button onClick={() => setModal({isOpen: false, error: ''})} disabled={isLoading} style={{ padding: '8px 16px', background: '#ecf0f1', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>Cancel</button>
+                            <button onClick={executeAdminAction} disabled={isLoading} style={{ padding: '8px 16px', background: modal.type === 'block' ? '#e74c3c' : '#27ae60', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>
+                                {/* SHOW SPINNER/TEXT */}
+                                {isLoading ? 'Processing...' : 'Confirm Action'}
+                            </button>
                         </div>
                     </div>
                 </div>

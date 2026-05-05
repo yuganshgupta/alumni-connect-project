@@ -6,7 +6,7 @@ import api from '../api/axiosConfig';
 const Navbar = () => {
     const { user, logout } = useContext(AuthContext);
     const [isOpen, setIsOpen] = useState(false);
-    const [unreadCount, setUnreadCount] = useState(0); // NEW: Notification Badge
+    const [unreadCount, setUnreadCount] = useState(0); 
     const navigate = useNavigate();
     const location = useLocation();
 
@@ -24,15 +24,19 @@ const Navbar = () => {
         return () => clearInterval(interval);
     }, [user]);
 
+    // BACK-BUTTON BOUNCER
     useEffect(() => {
-        if (user && (location.pathname === '/' || location.pathname === '/register')) {
+        const authRoutes = ['/', '/register', '/forgot-password', '/reset-password'];
+        if (user && authRoutes.includes(location.pathname)) {
             if (user.role === 'ADMIN') navigate('/admin-dashboard/users');
             else if (user.role === 'ALUMNI') navigate('/alumni-dashboard/manage');
             else navigate('/student-dashboard/browse');
         }
     }, [user, location, navigate]);
 
-    if (!user || location.pathname === '/' || location.pathname === '/register') return null;
+    // FIXED: Hide the navbar on ALL auth screens
+    const authRoutes = ['/', '/register', '/forgot-password', '/reset-password'];
+    if (!user || authRoutes.includes(location.pathname)) return null;
 
     const handleLogout = () => {
         logout();
@@ -45,14 +49,14 @@ const Navbar = () => {
         navLinks = [
             { name: 'Browse', path: '/student-dashboard/browse' },
             { name: 'Upcoming', path: '/student-dashboard/upcoming' },
-            { name: 'Messages', path: '/student-dashboard/chat', badge: true }, // Has Badge
+            { name: 'Messages', path: '/student-dashboard/chat', badge: true }, 
             { name: 'History', path: '/student-dashboard/history' },
             { name: 'Profile', path: '/student-dashboard/profile' }
         ];
     } else if (user.role === 'ALUMNI') {
         navLinks = [
             { name: 'Active Board', path: '/alumni-dashboard/manage' },
-            { name: 'Student Chat', path: '/alumni-dashboard/chat', badge: true }, // Has Badge
+            { name: 'Student Chat', path: '/alumni-dashboard/chat', badge: true }, 
             { name: 'History', path: '/alumni-dashboard/history' },
             { name: 'Profile', path: '/alumni-dashboard/profile' }
         ];
@@ -79,9 +83,9 @@ const Navbar = () => {
                 height: 100vh; width: 260px; background-color: #34495e; 
                 flex-direction: column; align-items: flex-start; padding: 60px 20px; 
                 transition: right 0.3s ease-in-out; box-shadow: -2px 0 5px rgba(0,0,0,0.5);
-                z-index: 1001; /* FIX 1: Must be higher than overlay (900) */
+                z-index: 1001; 
             }
-            .hamburger { display: ${isOpen ? 'none' : 'block'}; z-index: 1100; } /* FIX 2: Hides when open to prevent double close buttons */
+            .hamburger { display: ${isOpen ? 'none' : 'block'}; z-index: 1100; } 
             .close-btn { position: absolute; top: 15px; right: 20px; background: none; border: none; color: white; font-size: 32px; cursor: pointer; }
             .nav-item { width: 100%; padding: 15px 10px; border-bottom: 1px solid rgba(255,255,255,0.1); }
         }
@@ -106,7 +110,6 @@ const Navbar = () => {
                         onClick={() => setIsOpen(false)}
                     >
                         {link.name}
-                        {/* THE NOTIFICATION BADGE */}
                         {link.badge && unreadCount > 0 && <span className="badge">{unreadCount}</span>}
                     </Link>
                 ))}

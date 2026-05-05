@@ -18,7 +18,7 @@ function App() {
         <Routes>
           <Route path="/" element={<Login />} />
           <Route path="/register" element={<Register />} />
-          {/* NEW: Optional /:tab parameter for URL-driven navigation */}
+          {/* Optional /:tab parameter for URL-driven navigation */}
           <Route path="/student-dashboard/:tab?" element={<StudentDashboard />} />
           <Route path="/alumni-dashboard/:tab?" element={<AlumniDashboard />} />
           <Route path="/admin-dashboard/:tab?" element={<AdminDashboard />} />

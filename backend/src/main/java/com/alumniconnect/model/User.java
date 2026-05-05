@@ -28,7 +28,7 @@ public class User {
     @Column(nullable = false)
     private boolean isBlocked = false;
 
-    // --- NEW PROFILE FIELDS ---
+    // --- PROFILE FIELDS ---
     @Column(length = 500)
     private String linkedinUrl;
     
@@ -36,8 +36,17 @@ public class User {
     private String experience;
     
     @Column(length = 500)
-    private String resumeUrl; // In a real app, this would point to an AWS S3 bucket
+    private String resumeUrl;
     
     @Column(length = 500)
     private String profileImageUrl;
+
+    // --- NEW: Personal Meeting Room Link ---
+    @Column(length = 500)
+    private String meetingLink;
+
+    // --- NEW: Temporary OTP Field (Not saved to DB) ---
+    @Transient
+    private String otp;
+
 }
